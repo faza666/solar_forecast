@@ -1,4 +1,4 @@
-"""Solar power production forecast for a rooftop PV system.
+"""Solar power production forecast for a single-row garden-mounted PV array.
 
 Fetches hourly weather data from Open-Meteo and estimates power output
 for today and tomorrow.

@@ -1,6 +1,6 @@
 # Solar Power Forecast
 
-Fetches hourly weather forecasts and historical data from [Open-Meteo](https://open-meteo.com) and estimates the power output of a rooftop solar PV system.
+Fetches hourly weather forecasts and historical data from [Open-Meteo](https://open-meteo.com) and estimates the power output of a single-row garden-mounted solar PV array.
 
 - **`solar_forecast.py`** — forecast for today and tomorrow (prints an ASCII chart)
 - **`solar_history.py`** — historical production model for any 30-day window (writes `solar_history.json`)
