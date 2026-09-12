@@ -74,7 +74,7 @@ Energy (kWh)  = Power (kW) × 1 h
 
 `global_tilted_irradiance` (GTI) is computed by Open-Meteo for the exact panel angle and orientation — no manual geometric correction needed.
 
-**Performance ratio (0.85)** was fitted on 2026-09-12 against Home Assistant recorder statistics (uncurtailed clear hours, Aug 14–Sep 11). The product `PEAK_KW × PERFORMANCE_RATIO ≈ 7.7 kW` is fixed; 9.0 / 0.85 is one consistent split. If the real panel nameplate total is known, adjust `PEAK_KW` and recalculate PR = 7.7 / PEAK_KW.
+**Performance ratio (0.85)** was fitted on 2026-09-12 against Home Assistant recorder statistics (uncurtailed clear hours, Aug 14–Sep 11). The values are stable for this installation; change them in `solar_forecast.py` only if the physical array or inverter settings change.
 
 **Shading factor** models a building shadow to the ESE that clears when the sun's azimuth passes ~112° (string 1) and ~126° (string 2). While shaded, output is ~20% of expected (diffuse light). This is exact for Aug–Sep but will over-shade in summer and under-shade in winter; re-measure in December and June to add an elevation term.
 
