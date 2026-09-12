@@ -5,18 +5,22 @@ for today and tomorrow.
 
 System configuration (hardcoded for this installation):
   Location  : Uzhgorod, Ukraine  (48.621°N, 22.288°E)
-  Peak power: 8 kW
+  Peak power: 9 kW (two strings, ESE and SSE; modelled as one SE plane)
   Tilt      : 45°
-  Azimuth   : 0° (south-facing)
+  Azimuth   : -45° (south-east)
+  Shading   : a building to the ESE shades the row until the sun passes
+              azimuth ~112° (string 1) / ~126° (string 2)
 
 Open-Meteo is a free, no-auth API — no credentials needed.
 """
 from __future__ import annotations
 
+import math
 import sys
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from typing import List
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -27,10 +31,32 @@ import requests
 LATITUDE = 48.621025
 LONGITUDE = 22.288229
 TIMEZONE = "Europe/Kyiv"
-PEAK_KW = 8.0
+# PEAK_KW, AZIMUTH and PERFORMANCE_RATIO were fitted 2026-09-12 against Home
+# Assistant's uncurtailed PV hours (Aug 14 - Sep 11): the data pins down
+# PEAK_KW * PERFORMANCE_RATIO ~= 7.7 kW at azimuth -45 (RMSE 0.24 kW vs 1.0 kW
+# at azimuth 0). The array is actually two strings, ESE (~-60, 3.4 kW) and
+# SSE (~-30, 4.4 kW); -45 is the single-plane approximation. Observed string
+# peaks sum to 9.45 kW DC, so 9.0 kW is a lower bound on the nameplate size -
+# if the real panel total is known, put it here and set PR = 7.7 / PEAK_KW.
+PEAK_KW = 9.0
 TILT = 45          # degrees from horizontal
-AZIMUTH = 0        # 0 = south (Open-Meteo convention)
-PERFORMANCE_RATIO = 0.80   # accounts for inverter losses, wiring, soiling, etc.
+AZIMUTH = -45      # 0 = south, negative = east (Open-Meteo convention)
+PERFORMANCE_RATIO = 0.85   # accounts for inverter losses, wiring, soiling, etc.
+# The Deye's "Max Solar Power" setting (number.*_pv_power in HA) caps PV input.
+INVERTER_MAX_KW = 9.0
+
+# Morning shading. The panels are one row in a built-up area; a building to
+# the ESE shades them until the sun swings far enough south. Measured from HA
+# 5-minute data on clear days (2026-09-02..09): string 1 (ESE, ~44 % of the
+# array) clears when the sun's azimuth passes ~112 deg, string 2 (SSE) at
+# ~126 deg. While shaded a string yields ~20 % of expected (diffuse light only).
+# A pure azimuth rule is exact for Aug-Sep; it likely over-shades in summer
+# (sun high enough to clear the roofline earlier) and under-shades in winter
+# (sun barely above the horizon at these azimuths).
+SHADE_CLEAR_AZ_PV1 = 112.0   # sun azimuth (deg from N, clockwise) at which string 1 clears
+SHADE_CLEAR_AZ_PV2 = 126.0   # ... string 2
+PV1_SHARE = 0.44             # string 1's share of PEAK_KW (3.4 of 7.8 kW effective)
+SHADED_FRACTION = 0.20       # output of a shaded string relative to unshaded
 
 # Temperature coefficient of power (typical c-Si panel: -0.4 %/°C)
 TEMP_COEFF = -0.004
@@ -40,6 +66,45 @@ STC_TEMP = 25.0
 NOCT_RISE = 25.0
 
 API_URL = "https://api.open-meteo.com/v1/forecast"
+
+# ---------------------------------------------------------------------------
+# Sun position and shading
+# ---------------------------------------------------------------------------
+
+_TZ = ZoneInfo(TIMEZONE)
+
+
+def sun_azimuth(dt_local: datetime) -> float:
+    """Sun azimuth in degrees clockwise from north (NOAA approximation, ~0.5 deg)."""
+    utc = dt_local.replace(tzinfo=_TZ).astimezone(timezone.utc)
+    hrs = utc.hour + utc.minute / 60.0
+    g = math.radians(360.0 / 365.0 * (utc.timetuple().tm_yday - 1 + (hrs - 12) / 24.0))
+    eqt = 229.18 * (0.000075 + 0.001868 * math.cos(g) - 0.032077 * math.sin(g)
+                    - 0.014615 * math.cos(2 * g) - 0.040849 * math.sin(2 * g))
+    decl = (0.006918 - 0.399912 * math.cos(g) + 0.070257 * math.sin(g)
+            - 0.006758 * math.cos(2 * g) + 0.000907 * math.sin(2 * g)
+            - 0.002697 * math.cos(3 * g) + 0.00148 * math.sin(3 * g))
+    ha = math.radians((hrs * 60 + eqt + 4 * LONGITUDE) / 4 - 180)
+    lat = math.radians(LATITUDE)
+    el = math.asin(math.sin(lat) * math.sin(decl) + math.cos(lat) * math.cos(decl) * math.cos(ha))
+    az = math.acos((math.sin(decl) * math.cos(lat) - math.cos(decl) * math.sin(lat) * math.cos(ha))
+                   / math.cos(el))
+    return math.degrees(2 * math.pi - az if ha > 0 else az)
+
+
+def shading_factor(slot_start: datetime) -> float:
+    """Fraction of unshaded output for the hour starting at slot_start (local time).
+
+    Sampled every 10 minutes so an edge inside the hour shades only part of it.
+    """
+    total = 0.0
+    for m in range(5, 60, 10):
+        az = sun_azimuth(slot_start + timedelta(minutes=m))
+        pv1 = 1.0 if az >= SHADE_CLEAR_AZ_PV1 else SHADED_FRACTION
+        pv2 = 1.0 if az >= SHADE_CLEAR_AZ_PV2 else SHADED_FRACTION
+        total += PV1_SHARE * pv1 + (1.0 - PV1_SHARE) * pv2
+    return total / 6
+
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -60,7 +125,9 @@ class HourSlot:
             return 0.0
         cell_temp = self.temp + NOCT_RISE
         temp_correction = 1.0 + TEMP_COEFF * (cell_temp - STC_TEMP)
-        return round(self.gti / 1000.0 * PEAK_KW * PERFORMANCE_RATIO * temp_correction, 3)
+        dc_kw = self.gti / 1000.0 * PEAK_KW * PERFORMANCE_RATIO * temp_correction
+        dc_kw *= shading_factor(self.dt)
+        return round(min(dc_kw, INVERTER_MAX_KW), 3)
 
     @property
     def energy_kwh(self) -> float:
