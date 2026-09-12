@@ -31,39 +31,22 @@ import requests
 LATITUDE = 48.621025
 LONGITUDE = 22.288229
 TIMEZONE = "Europe/Kyiv"
-# PEAK_KW, AZIMUTH and PERFORMANCE_RATIO were fitted 2026-09-12 against Home
-# Assistant's uncurtailed PV hours (Aug 14 - Sep 11): the data pins down
-# PEAK_KW * PERFORMANCE_RATIO ~= 7.7 kW at azimuth -45 (RMSE 0.24 kW vs 1.0 kW
-# at azimuth 0). The array is actually two strings, ESE (~-60, 3.4 kW) and
-# SSE (~-30, 4.4 kW); -45 is the single-plane approximation. Observed string
-# peaks sum to 9.45 kW DC, so 9.0 kW is a lower bound on the nameplate size -
-# if the real panel total is known, put it here and set PR = 7.7 / PEAK_KW.
-PEAK_KW = 9.0
-TILT = 45          # degrees from horizontal
-AZIMUTH = -45      # 0 = south, negative = east (Open-Meteo convention)
-PERFORMANCE_RATIO = 0.85   # accounts for inverter losses, wiring, soiling, etc.
-# The Deye's "Max Solar Power" setting (number.*_pv_power in HA) caps PV input.
-INVERTER_MAX_KW = 9.0
+PEAK_KW = 9.0              # Fitted against HA data; see README.md
+TILT = 45                  # degrees from horizontal
+AZIMUTH = -45              # 0 = south, negative = east
+PERFORMANCE_RATIO = 0.85   # Fitted against HA data; see README.md
+INVERTER_MAX_KW = 9.0      # Deye inverter PV input limit
 
-# Morning shading. The panels are one row in a built-up area; a building to
-# the ESE shades them until the sun swings far enough south. Measured from HA
-# 5-minute data on clear days (2026-09-02..09): string 1 (ESE, ~44 % of the
-# array) clears when the sun's azimuth passes ~112 deg, string 2 (SSE) at
-# ~126 deg. While shaded a string yields ~20 % of expected (diffuse light only).
-# A pure azimuth rule is exact for Aug-Sep; it likely over-shades in summer
-# (sun high enough to clear the roofline earlier) and under-shades in winter
-# (sun barely above the horizon at these azimuths).
-SHADE_CLEAR_AZ_PV1 = 112.0   # sun azimuth (deg from N, clockwise) at which string 1 clears
-SHADE_CLEAR_AZ_PV2 = 126.0   # ... string 2
-PV1_SHARE = 0.44             # string 1's share of PEAK_KW (3.4 of 7.8 kW effective)
-SHADED_FRACTION = 0.20       # output of a shaded string relative to unshaded
+# Morning shading (ESE obstruction). See README.md for details.
+SHADE_CLEAR_AZ_PV1 = 112.0   # String 1 clears at this sun azimuth (degrees)
+SHADE_CLEAR_AZ_PV2 = 126.0   # String 2 clears at this sun azimuth (degrees)
+PV1_SHARE = 0.44             # String 1's share of total (44%)
+SHADED_FRACTION = 0.20       # Output while shaded (20% of unshaded)
 
-# Temperature coefficient of power (typical c-Si panel: -0.4 %/°C)
-TEMP_COEFF = -0.004
-# Reference temperature at standard test conditions (STC)
-STC_TEMP = 25.0
-# Simplified cell-temperature rise above ambient (NOCT model)
-NOCT_RISE = 25.0
+# Temperature model (standard c-Si panel)
+TEMP_COEFF = -0.004       # Power coefficient per °C
+STC_TEMP = 25.0           # Standard test conditions temperature
+NOCT_RISE = 25.0          # Cell temperature rise above ambient
 
 API_URL = "https://api.open-meteo.com/v1/forecast"
 
